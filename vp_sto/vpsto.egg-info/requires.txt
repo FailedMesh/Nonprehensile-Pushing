@@ -1,0 +1,8 @@
+numpy
+cma
+
+[collision]
+shapely
+
+[plotting]
+matplotlib
