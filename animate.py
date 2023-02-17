@@ -51,8 +51,9 @@ def unpack_params(i, ext_force, contact_points, pos, vel):
     
     return fcx, fcy, phi, Rbs, curr_vel
 
-def unit_vector(v):
+def unit_vector(v_input):
     
+    v = v_input.copy()
     if np.linalg.norm(v) != 0.0:
         return v / np.linalg.norm(v)
     else:
@@ -95,7 +96,6 @@ def get_contact_frame(phi, l, b):
     
     r = slider_geometry(phi, l, b)
     contact = np.array([r*np.cos(phi), r*np.sin(phi)])
-    contact_unit = unit_vector(contact)
     
     r_front = slider_geometry(phi + 0.001, l, b)
     contact_front = np.array([r_front*np.cos(phi + 0.001), r_front*np.sin(phi + 0.001)])
@@ -123,12 +123,12 @@ def get_contact_frame(phi, l, b):
 def transform_forces(fcx, fcy, phi, Rbs, vel, Fr, mu2, l, b):
     
     r = slider_geometry(phi, l, b)
-    contact = np.array([r*np.cos(phi), r*np.sin(phi)])
+    contact = np.round(np.array([r*np.cos(phi), r*np.sin(phi)]), 12)
     contact_unit = unit_vector(contact)
     
     force = (Rbs @ (np.array([[fcx, fcy]]).T)).T[0]
     force_unit = unit_vector(force)
-    
+
     contact_angle = np.arctan2(force_unit[1], force_unit[0]) - np.arctan2(contact_unit[1], contact_unit[0])
     inverse_phi = np.arctan2(-contact_unit[1], -contact_unit[0])
     
@@ -137,10 +137,33 @@ def transform_forces(fcx, fcy, phi, Rbs, vel, Fr, mu2, l, b):
     Fbx = Fcom * np.cos(inverse_phi)
     Fby = Fcom * np.sin(inverse_phi)
     
-    F_translational = (Rbs.T @ (np.array([[Fbx, Fby]]).T)).T[0]
-    torque_force = np.linalg.norm(force) * np.sin(contact_angle)
+    F_translational = np.round((Rbs.T @ (np.array([[Fbx, Fby]]).T)).T[0], 12)
+    torque_force = np.round(np.linalg.norm(force) * np.sin(contact_angle), 12)
+    
+    vel_b = (Rbs @ (np.array([vel[:2]]).T)).T[0]
+    inverse_vel_angle = np.arctan2(-vel_b[1], -vel_b[0])
+    
+    if np.linalg.norm(vel[:2]) != 0:
+        Frx = Fr * np.cos(inverse_vel_angle)
+        Fry = Fr * np.sin(inverse_vel_angle)
+    elif abs(Fcom) > Fr:
+        Frx = Fr * np.cos(phi)
+        Fry = Fr * np.sin(phi)
+    else:
+        Frx = 0.0
+        Fry = 0.0
+    
+    F_friction = np.round((Rbs.T @ (np.array([[Frx, Fry]]).T)).T[0], 12)
+    
+    if np.linalg.norm(vel[2]) != 0:
+        torque_friction = -1 * Fr * direction(vel[2])
+    elif abs(torque_force) > Fr:
+        torque_friction = -1 * Fr * direction(torque_force)
+    else:
+        torque_friction = 0.0
     
     F = np.append(F_translational, torque_force)
+    Friction = np.append(F_friction, torque_friction)
     
     #Check if force is non-sliding:
     
@@ -153,18 +176,8 @@ def transform_forces(fcx, fcy, phi, Rbs, vel, Fr, mu2, l, b):
         raise Exception("Force is not directed towards the block")
     if np.abs(Ft) > mu2 * np.abs(Fn):
         raise Exception("Force applied will cause sliding against block surface, therefore it is invalid")
-    
-    #Accounting for Friction:
-    
-    for i in range(F.size):
         
-        if (vel[i] != 0):
-            F[i] -= Fr * direction(vel[i])
-        elif (vel[i] == 0 and abs(F[i]) > Fr):
-            F[i] -= Fr * direction(F[i])
-        else:
-            F[i] = 0.0
-        
+    F = F[:] + Friction[:]
     F[2] *= r
     
     return F
@@ -187,17 +200,17 @@ vel = np.zeros((N, 3))
 acc = np.zeros((N, 3))
 
 #Assign the initial position
-pos[0, :] = start[:]
+pos[0, :] = start.copy()
 
 # ************* External Parameters ************* #
 
 ext_force = np.zeros((N, 2))
 #contact_points = np.zeros((N, 1))
-contact_points = np.ones((N, 1)) * (-20 * np.pi/180)
+contact_points = np.ones((N, 1)) * (-130 * np.pi/180)
 
 #Initial force:
 ext_force[0, 0] = 0.0
-ext_force[0, 1] = 60.0
+ext_force[0, 1] = 40.0
 
 #########################################################################################################
 # ----------------------------------------- GENERATE SIMULATION --------------------------------------- #
@@ -217,15 +230,16 @@ for i in range(1, N):
     vel[i, :] = vel[i-1, :] + del_t * acc[i-1, :]
     pos[i, :] = pos[i-1, :] + del_t * vel[i-1, :]
     
+    for j in range(3):
+        
+        if np.linalg.norm(prev_fcx) == 0 and np.linalg.norm(prev_fcy) == 0 and direction(vel[i, j]) == -direction(vel[i-1, j]):
+            vel[i, j] = 0.0
+    
     fcx, fcy, phi, Rbs, curr_vel = unpack_params(i, ext_force, contact_points, pos, vel)
     F = transform_forces(fcx, fcy, phi, Rbs, curr_vel, Fr, mu2, length, breadth)
     
     acc[i, :2] = F[:2] / mass
     acc[i, 2] = F[2] / Iz
-    
-    if np.linalg.norm(prev_fcx) == 0 and np.linalg.norm(prev_fcy) == 0 and np.dot(vel[i, :], vel[i-1, :]) < 0:
-        
-        vel[i, :] = np.zeros((3, ))
         
     prev_fcx = fcx
     prev_fcy = fcy
@@ -249,15 +263,19 @@ def animate(i):
 
     ax.clear()
     ax.plot(x, y)
-    # block = plt.Rectangle((x[-1] - length/2, y[-1] - breadth/2), 
-    #                         length, 
-    #                         breadth, 
-    #                         color = 'red', 
-    #                         angle = pos[i, 2], 
-    #                         rotation_point = (x[-1], y[-1]))
-    #plt.gca().add_patch(block)
-    ax.set_xlim([np.min(pos[:, 0]) - 2*length, np.max(pos[:, 0]) + 2*length])
-    ax.set_ylim([np.min(pos[:, 1]) - 2*length, np.max(pos[:, 1]) + 2*length])
+    block = plt.Rectangle((x[-1] - length/2, y[-1] - breadth/2), 
+                            length, 
+                            breadth, 
+                            color = 'red', 
+                            angle = pos[i, 2], 
+                            rotation_point = (x[-1], y[-1]))
+    plt.gca().add_patch(block)
+
+    upper_limit = np.max(pos[:, :2]) + 2*length
+    lower_limit = np.min(pos[:, :2]) - 2*length
+
+    ax.set_xlim([lower_limit, upper_limit])
+    ax.set_ylim([lower_limit, upper_limit])
 
 # run the animation
 ani = FuncAnimation(fig, animate, frames=N, interval=20, repeat=False)
