@@ -28,7 +28,8 @@ class TestCase1:
         self.obj_colors =  {
             'bottom_obj': np.hstack([COLOR_SPACE[3, :], np.array([1.0])]),
             'target_obj': np.hstack([COLOR_SPACE[0, :], np.array([1.0])]), # np.hstack([(TARGET_LOWER.astype(float)+TARGET_UPPER.astype(float))/(255.0*2), np.array([1.0])]),
-            'marker': np.hstack([COLOR_SPACE[9, :], np.array([1.0])])
+            'marker': np.hstack([COLOR_SPACE[9, :], np.array([1.0])]),
+            'obstacle': np.hstack([COLOR_SPACE[0, :], np.array([1.0])])
         }
         self.current_bottom_obj_height = 0
         self.current_bottom_size = np.zeros(shape=(3, ))
@@ -151,12 +152,16 @@ class TestCase1:
         
         obstacle_size = np.array([0.05, 0.05, 0.04])
         
-        obstacle_locs = np.load('obstacle_locations.npy')[scene_id]
+        obstacle_locs = np.load('obstacle_locations3.npy')[scene_id]
+        print("Obstacle Locations: ",obstacle_locs)
 
         for i in range(obstacle_locs.shape[0]):
 
             obstacle_orientation = p.getQuaternionFromEuler([0, 0, obstacle_locs[i, 2]])
-            obstacle_id = self.create_obj(obstacle_locs[i, :2], obstacle_orientation, half_extents=obstacle_size/2, obj_type='obstacle')
+            obstacle_loc = np.append(obstacle_locs[i, :2], 0.02) #Set height
+            # print("Obstacle i:")
+            # print(obstacle_locs[i,:2], obstacle_orientation)
+            obstacle_id = self.create_obj(obstacle_loc, obstacle_orientation, half_extents=obstacle_size/2, obj_type='obstacle')
             body_ids.append(obstacle_id)    
             self.env.add_object_id(obstacle_id)
         
@@ -172,7 +177,7 @@ class TestCase1:
             self.env.client_id.stepSimulation()
             # p.stepSimulation(self.env.client_id)
 
-        _ = input("Does the obstacle spawn? Press Enter to continue")
+        #_ = input("Does the obstacle spawn? Press Enter to continue")
 
         return body_ids, success
 
