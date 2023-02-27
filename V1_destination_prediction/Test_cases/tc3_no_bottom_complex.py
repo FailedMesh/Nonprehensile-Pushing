@@ -44,12 +44,30 @@ class TestCase1:
         if obj_type=='marker':
             vuid = self.env.client_id.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=self.obj_colors[obj_type])# np.hstack([(TARGET_LOWER.astype(float)+TARGET_UPPER.astype(float))/(255.0*2), np.array([1.0])]))
             body_id_target = self.env.client_id.createMultiBody(baseVisualShapeIndex=vuid, basePosition=obj_pos, baseOrientation=obj_orientation)
+        
+        elif obj_type == 'cuboid':
+            cuid = self.env.client_id.createCollisionShape(p.GEOM_BOX, halfExtents = [0.25, 0.05, 0.02])
+            vuid = self.env.client_id.createVisualShape(p.GEOM_BOX, halfExtents=[0.25, 0.05, 0.02], rgbaColor=self.obj_colors['obstacle'])# np.hstack([(TARGET_LOWER.astype(float)+TARGET_UPPER.astype(float))/(255.0*2), np.array([1.0])]))
+            body_id_target = self.env.client_id.createMultiBody(baseMass=0.1, baseCollisionShapeIndex=cuid, baseVisualShapeIndex=vuid, basePosition=obj_pos, baseOrientation=obj_orientation)
+            
+        elif obj_type == 'cylinder':
+            cuid = self.env.client_id.createCollisionShape(p.GEOM_CYLINDER, radius = 0.025, height = 0.04)
+            vuid = self.env.client_id.createVisualShape(p.GEOM_CYLINDER, radius = 0.025, length = 0.04, rgbaColor=self.obj_colors['obstacle'])
+            body_id_target = self.env.client_id.createMultiBody(baseMass=0.1, baseCollisionShapeIndex=cuid, baseVisualShapeIndex=vuid, basePosition=obj_pos)
+        
+        elif obj_type == 'cube':
+            cuid = self.env.client_id.createCollisionShape(p.GEOM_BOX, halfExtents = half_extents)
+            vuid = self.env.client_id.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=self.obj_colors['obstacle'])# np.hstack([(TARGET_LOWER.astype(float)+TARGET_UPPER.astype(float))/(255.0*2), np.array([1.0])]))
+            body_id_target = self.env.client_id.createMultiBody(baseMass=0.1, baseCollisionShapeIndex=cuid, baseVisualShapeIndex=vuid, basePosition=obj_pos, baseOrientation=obj_orientation)
+            
         else:
             cuid = self.env.client_id.createCollisionShape(p.GEOM_BOX, halfExtents = half_extents)
             vuid = self.env.client_id.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=self.obj_colors[obj_type])# np.hstack([(TARGET_LOWER.astype(float)+TARGET_UPPER.astype(float))/(255.0*2), np.array([1.0])]))
             body_id_target = self.env.client_id.createMultiBody(baseMass=0.1, baseCollisionShapeIndex=cuid, baseVisualShapeIndex=vuid, basePosition=obj_pos, baseOrientation=obj_orientation)
         # p.changeVisualShape(body_id_target, rgbaColor=self.obj_colors[obj_type])
+        
         return body_id_target
+
 
     def add_marker_obj(self, obj_pos, obj_orientation, half_extents=np.array([0.08, 0.08, 0.02]) , obj_type='marker'):
         # if self.check_target_within_bottom_bounds(obj_pos) == False:
@@ -68,7 +86,7 @@ class TestCase1:
             self.env.client_id.stepSimulation()
         return marker_obj_id, success
 
-    def create_specific_test_case(self, scene_id, bottom_obj='default', target_obj='test', targetPos=[0, 0]):
+    def create_specific_test_case(self, obstacle_config, bottom_obj='default', target_obj='test', targetPos=[0, 0]):
         '''Samples a randomly generated test case with the required properties
         1. One object on the top
         2. One object at the bottom
@@ -150,27 +168,24 @@ class TestCase1:
 
         ## ------------- CREATE OBSTACLE ------------------ ##
         
+        shapes = ['cube', 'cuboid', 'cylinder']
+        
         obstacle_size = np.array([0.05, 0.05, 0.04])
         
-        #obstacle_locs = np.load('obstacle_locations/long_obstacle2.npy')[scene_id]
-        obstacle_locs = np.load('Results/Run1/obstacle_config.npy')
+        obstacle_locs = np.load(obstacle_config)
         print("Obstacle Locations: ", obstacle_locs)
 
-        #print(p.getCameraImage(512, 512)[2])
-
         for i in range(obstacle_locs.shape[0]):
-
+   
             obstacle_orientation = p.getQuaternionFromEuler([0, 0, obstacle_locs[i, 2]])
-            obstacle_loc = np.append(obstacle_locs[i, :2], 0.02) #Set height
             
-            #For cube object:
-            obstacle_id = self.create_obj(obstacle_loc, obstacle_orientation, half_extents=obstacle_size/2, obj_type='obstacle')
+            obstacle_loc = np.append(obstacle_locs[i, :2], 0.02) #Set height
+            # print("Obstacle i:")
+            # print(obstacle_locs[i,:2], obstacle_orientation)
 
-            #For cylindrical object:
-            # cuid = self.env.client_id.createCollisionShape(p.GEOM_CYLINDER, radius = 0.025, height = 0.04)
-            # vuid = self.env.client_id.createVisualShape(p.GEOM_CYLINDER, radius = 0.025, length = 0.04, rgbaColor=self.obj_colors['obstacle'])
-            # obstacle_id = self.env.client_id.createMultiBody(baseMass=0.1, baseCollisionShapeIndex=cuid, baseVisualShapeIndex=vuid, basePosition=obstacle_loc)
-        
+            obj_type = shapes[int(obstacle_locs[i, 3])]
+
+            obstacle_id = self.create_obj(obstacle_loc, obstacle_orientation, half_extents=obstacle_size/2, obj_type=obj_type)
             body_ids.append(obstacle_id)    
             self.env.add_object_id(obstacle_id)
         
@@ -186,7 +201,7 @@ class TestCase1:
             self.env.client_id.stepSimulation()
             # p.stepSimulation(self.env.client_id)
 
-        _ = input("Does the obstacle spawn? Press Enter to continue")
+        #_ = input("Does the obstacle spawn? Press Enter to continue")
 
         return body_ids, success
 
