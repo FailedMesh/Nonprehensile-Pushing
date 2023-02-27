@@ -45,7 +45,7 @@ from Config.constants import (
 
 from Environments.environment_sim2 import Environment
 import Environments.utils as env_utils
-from V1_destination_prediction.Test_cases.tc3_no_bottom import TestCase1
+from V1_destination_prediction.Test_cases.tc3_no_bottom_complex import TestCase1
 
 from create_env import get_push_start, get_max_extent_of_target_from_bottom, get_push_start_POSMAX
 
@@ -128,13 +128,17 @@ def compute_l2_loss(joint_pose_list):
 
 
 def get_loss(sample_trajectory):
-    env = Environment(gui = True)
+    env = Environment(gui = False)
     env.reset()
     threshold_d = 0.05 # Threshold pose distance
     testcase1 = TestCase1(env)
     start_pt = sample_trajectory[0]
     print("Start = ", start_pt)
-    body_ids, sucess = testcase1.create_specific_test_case(targetPos=start_pt, scene_id = 0)
+
+    obstacle_file = 'obstacle_locations/complex_scene1.npy'
+    obstacle_details = np.load(obstacle_file)
+
+    body_ids, sucess = testcase1.create_specific_test_case(targetPos=start_pt, obstacle_config = obstacle_file)
     targetPos, targetOrn = p.getBasePositionAndOrientation(body_ids[0])
     marker_poses = []
     marker_yaws = []
@@ -165,14 +169,14 @@ def get_loss(sample_trajectory):
 
         # Replace 2 with a general number of obstacles:
 
-        obstacle_num = 1
+        obstacle_num = obstacle_details.shape[0]
         
         obstacle_initial_poses = np.zeros((obstacle_num, 7))
 
         for j in range(obstacle_num):
             ob_start_pos, ob_start_orn = p.getBasePositionAndOrientation(body_ids[-1*(j+1)])
-            obstacle_initial_poses[j, :3] = ob_start_pos
-            obstacle_initial_poses[j, 3:] = ob_start_orn
+            obstacle_initial_poses[j, :3] = ob_start_pos[:]
+            obstacle_initial_poses[j, 3:] = ob_start_orn[:]
         
         while dist_pos > threshold_d and PUSH_ITER < MAX_PUSH_ITER:
             
@@ -223,21 +227,22 @@ def get_loss(sample_trajectory):
 
                 wp_to_wp_loss = compute_l2_loss(all_joints)
                 joint_cost += wp_to_wp_loss
+
+            # ------------ Collision Cost -------------- #
+
+            obstacle_final_poses = np.zeros((obstacle_num, 7))
+            
+            for j in range(obstacle_num):
+                ob_end_pos, ob_end_orn = p.getBasePositionAndOrientation(body_ids[-1*(j+1)])
+                obstacle_final_poses[j, :3] = ob_end_pos[:]
+                obstacle_final_poses[j, 3:] = ob_end_orn[:]
+
+            pose_diff = obstacle_final_poses - obstacle_initial_poses
+            collision_cost += 100000 * np.linalg.norm(pose_diff)
+
+            # -------------------------------------------- #
+
             PUSH_ITER += 1
-
-        # ------------ Collision Cost -------------- #
-
-        obstacle_final_poses = np.zeros((obstacle_num, 7))
-        
-        for j in range(obstacle_num):
-            ob_start_pos, ob_start_orn = p.getBasePositionAndOrientation(body_ids[-1*(j+1)])
-            obstacle_final_poses[j, :3] = ob_start_pos
-            obstacle_final_poses[j, 3:] = ob_start_orn
-
-        pose_diff = obstacle_final_poses - obstacle_initial_poses
-        collision_cost += 100000 * np.linalg.norm(pose_diff)
-
-        # -------------------------------------------- #
 
         print("Finished sampling ", i+1, " trajectories")
         print("Iterations = ", PUSH_ITER + 1)

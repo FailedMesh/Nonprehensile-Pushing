@@ -223,21 +223,22 @@ def get_loss(sample_trajectory):
 
                 wp_to_wp_loss = compute_l2_loss(all_joints)
                 joint_cost += wp_to_wp_loss
+
+            # ------------ Collision Cost -------------- #
+
+            obstacle_final_poses = np.zeros((obstacle_num, 7))
+            
+            for j in range(obstacle_num):
+                ob_start_pos, ob_start_orn = p.getBasePositionAndOrientation(body_ids[-1*(j+1)])
+                obstacle_final_poses[j, :3] = ob_start_pos
+                obstacle_final_poses[j, 3:] = ob_start_orn
+
+            pose_diff = obstacle_final_poses - obstacle_initial_poses
+            collision_cost += 100000 * np.linalg.norm(pose_diff)
+
+            # -------------------------------------------- #
+
             PUSH_ITER += 1
-
-        # ------------ Collision Cost -------------- #
-
-        obstacle_final_poses = np.zeros((obstacle_num, 7))
-        
-        for j in range(obstacle_num):
-            ob_start_pos, ob_start_orn = p.getBasePositionAndOrientation(body_ids[-1*(j+1)])
-            obstacle_final_poses[j, :3] = ob_start_pos
-            obstacle_final_poses[j, 3:] = ob_start_orn
-
-        pose_diff = obstacle_final_poses - obstacle_initial_poses
-        collision_cost += 100000 * np.linalg.norm(pose_diff)
-
-        # -------------------------------------------- #
 
         print("Finished sampling ", i+1, " trajectories")
         print("Iterations = ", PUSH_ITER + 1)
