@@ -2,6 +2,7 @@ from random import randint
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from IPython.display import clear_output
 
 
 
@@ -15,8 +16,7 @@ def unpack_params(i, ext_force, contact_points, pos, vel):
     phi = contact_points[i, 0]
 
     theta = pos[i, 2]
-    Rbs = np.array([[np.cos(theta), np.sin(theta)],
-                    [- np.sin(theta), np.cos(theta)]])
+    Rbs = get_rotation_matrix(theta)
     
     curr_vel = vel[i, :]
     
@@ -36,6 +36,10 @@ def direction(v):
         return v / np.abs(v)
     else:
         return 0.0
+
+def get_rotation_matrix(theta):
+
+    return np.array([[np.cos(theta), np.sin(theta)], [- np.sin(theta), np.cos(theta)]])
 
 #########################################################################################################
 # ------------------------------------------ GEOMETRY FUNCTIONS --------------------------------------- #
@@ -136,7 +140,123 @@ def transform_forces(fcx, fcy, phi, Rbs, vel, Fr, mu2, l, b):
     F = np.append(F_translational, torque_force)
     Friction = np.append(F_friction, torque_friction)
         
+    #-----------Check if force is non-sliding--------------------#
+    
+    normal, tangent = get_contact_frame(phi, l, b)
+
+    Fn = np.dot(normal, force)
+    Ft = np.dot(tangent, force)
+
+    if Fn < 0:
+        raise Exception("Force is not directed towards the block")
+    if np.abs(Ft) > mu2 * np.abs(Fn):
+        raise Exception("Force applied will cause sliding against block surface, therefore it is invalid")
+    
+    #------------------------------------------------------------#
+    
     F = F[:] + Friction[:]
     F[2] *= r
     
     return F
+
+
+#########################################################################################################
+# ----------------------------------------- GENERATE SIMULATION --------------------------------------- #
+#########################################################################################################
+
+def simulate(ext_force, phi, start_pos, start_vel, del_t, params):    
+
+    fcx, fcy = ext_force
+    Rbs = get_rotation_matrix(start_pos[2])
+
+    F = transform_forces(fcx, fcy, phi, Rbs, start_vel, 
+                         params['Fr'], params['mu2'], params['length'], params['breadth'])
+
+    acc = np.zeros((1, 3))
+    vel = np.zeros((1, 3))
+    pos = np.zeros((1, 3))
+    
+    cur_acc = np.divide(F, [params['mass'], params['mass'], params['Iz']])
+    acc[0, :] = cur_acc.copy()
+    vel[0, :] = start_vel.copy()
+    pos[0, :] = start_pos.copy()
+
+    #acc = np.concatenate([acc, cur_acc], axis = 0)
+
+    i = 1
+    #prev_fc = np.array([1., 1.])
+
+    #for i in range(1, N):
+    while True:
+        
+        clear_output(wait=True)
+        print("Iterations = ", i)
+        
+        cur_vel = vel[i-1, :] + del_t * acc[i-1, :]
+        cur_pos = pos[i-1, :] + del_t * vel[i-1, :]
+        print(cur_pos)
+        print(cur_vel)
+        
+        for j in range(3):
+            
+            if direction(cur_vel[j]) == -direction(vel[i-1, j]):
+                cur_vel[j] = 0.0
+        
+        Rbs = get_rotation_matrix(cur_pos[2])
+        F = transform_forces(0., 0., 0., Rbs, cur_vel, 
+                         params['Fr'], params['mu2'], params['length'], params['breadth'])
+        
+        cur_acc = np.divide(F, [params['mass'], params['mass'], params['Iz']])
+
+        acc = np.concatenate([acc, [cur_acc]], axis = 0)
+        vel = np.concatenate([vel, [cur_vel]], axis = 0)
+        pos = np.concatenate([pos, [cur_pos]], axis = 0)
+        i += 1 
+
+        #Stopping condition:
+        if np.linalg.norm(cur_vel) == 0.0:
+            break
+
+        #prev_fc = np.array([fcx, fcy])
+
+    return acc.copy(), vel.copy(), pos.copy()
+
+
+def animate(pos, params):
+    
+    # create empty lists for the x and y data
+    x = []
+    y = []
+
+    # create the figure and axes objects
+    fig, ax = plt.subplots()
+
+    length = params['length']
+    breadth = params['breadth']
+
+    # function that draws each frame of the animation
+    def frame(i):
+
+        x.append(pos[i, 0])
+        y.append(pos[i, 1])
+
+        ax.clear()
+        ax.plot(x, y)
+        block = plt.Rectangle((x[-1] - length/2, y[-1] - breadth/2), 
+                                length, 
+                                breadth, 
+                                color = 'red', 
+                                angle = pos[i, 2], 
+                                rotation_point = (x[-1], y[-1]))
+        plt.gca().add_patch(block)
+
+        upper_limit = np.max(pos[:, :2]) + 2*length
+        lower_limit = np.min(pos[:, :2]) - 2*length
+
+        ax.set_xlim([lower_limit, upper_limit])
+        ax.set_ylim([lower_limit, upper_limit])
+
+    # run the animation
+    ani = FuncAnimation(fig, frame, frames = pos.shape[0], interval=20, repeat=False)
+
+    plt.show()
