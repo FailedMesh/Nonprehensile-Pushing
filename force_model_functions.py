@@ -221,7 +221,6 @@ def simulate(ext_force, phi, start_pos, start_vel, del_t, params):
 
     return acc.copy(), vel.copy(), pos.copy()
 
-
 def animate(pos, params):
     
     # create empty lists for the x and y data
